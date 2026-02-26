@@ -12,64 +12,52 @@ exports.filterCareers=async(req,res)=>{
 }
 exports.getCareerMatch = async (req, res) => {
   try {
-    const { skills = [], interests = [] } = req.body;
+    const { interests = [] } = req.body;
     const careers = await Career.find();
+
     const results = careers.map(career => {
-      // Skill Match
-      const skillMatches = career.skills.filter(skill =>
-        skills.map(s => s.toLowerCase()).includes(skill.toLowerCase())
+      const interestMatches = career.interests.filter(i =>
+        interests.includes(i.toLowerCase())
       ).length;
-      const skillScore = (skillMatches / career.skills.length) * 60;
-      // Interest Match
-      const interestMatches = career.interests.filter(interest =>
-        interests.map(i => i.toLowerCase()).includes(interest.toLowerCase())
-      ).length;
-      const interestScore = (interestMatches / career.interests.length) * 25;
-      const demandScore=(career.demandGrowth/40)*15;
-      let penalty=0;
-      if(skillScore<20) penalty+=10;
-      if(interestScore<10) penalty+=5;
-      const totalScore = skillScore + interestScore + demandScore - penalty;
-      return {
-        ...career.toObject(),
-        matchScore: Number(totalScore.toFixed(2))
-      };
+
+      // Score calculation based on interest percentage
+      const totalScore = interestMatches > 0 ? (interestMatches / career.interests.length) * 100 : 0;
+
+      return { ...career.toObject(), matchScore: Number(totalScore.toFixed(2)) };
     });
-    const sorted = results.sort((a, b) => b.matchScore - a.matchScore);
-    res.json({
-      recommendedCareer: sorted[0],
-      topCareers: sorted.slice(0, 5)
-    });
+
+    const sorted = results.filter(c => c.matchScore > 0).sort((a, b) => b.matchScore - a.matchScore);
+
+    res.json({ recommendedCareer: sorted[0] || null });
   } catch (error) {
     res.status(500).json({ error: "Server Error" });
   }
 };
-
 exports.getCareerAnalytics = async (req, res) => {
   try {
-    const { skills = [], interests = [] } = req.body;
+    const { interests = [] } = req.body;
     const careers = await Career.find();
+
     const scoredCareers = careers.map(career => {
       let score = 0;
-      skills.forEach(skill => {
-        if (career.skills.map(s => s.toLowerCase()).includes(skill.toLowerCase())) score += 3;
-      });
       interests.forEach(interest => {
-        if (career.interests.map(i => i.toLowerCase()).includes(interest.toLowerCase())) score += 2;
+        if (career.interests.map(i => i.toLowerCase()).includes(interest.toLowerCase())) {
+          score += 10; 
+        }
       });
-      score += career.demandGrowth * 0.1;
 
-      return {
-        ...career._doc,
-        matchScore: parseFloat(score.toFixed(2))
-      };
+      return { ...career._doc, matchScore: score };
     });
 
-    scoredCareers.sort((a, b) => b.matchScore - a.matchScore);
+    const matchedCareers = scoredCareers.filter(c => c.matchScore > 0);
+    matchedCareers.sort((a, b) => b.matchScore - a.matchScore);
 
-    const topCareers = scoredCareers.slice(0, 3);
+    const topCareers = matchedCareers.slice(0, 3);
 
-    // 🔥 GRAPH READY DATA
+    if (topCareers.length === 0) {
+      return res.json({ graphs: null, message: "No matches found" });
+    }
+
     const salaryGraph = topCareers.map(c => ({
       name: c.name,
       fresher: c.salary.fresher,
@@ -77,25 +65,10 @@ exports.getCareerAnalytics = async (req, res) => {
       senior: c.salary.senior
     }));
 
-    const demandGraph = topCareers.map(c => ({
-      name: c.name,
-      demandGrowth: c.demandGrowth
-    }));
-
-    const skillsGraph = topCareers.map(c => ({
-      name: c.name,
-      totalSkills: c.skills.length
-    }));
-
-   res.json({
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    recommendedCareer: topCareers[0],
-  topCareers: topCareers,
-  graphs: {
-    salaryGraph,
-    demandGraph,
-    skillsGraph
-  }
-});
+    res.json({
+      recommendedCareer: topCareers[0],
+      graphs: { salaryGraph }
+    });
   } catch (error) {
     res.status(500).json({ message: "Server Error" });
   }
